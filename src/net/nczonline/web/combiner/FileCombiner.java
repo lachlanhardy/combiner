@@ -22,26 +22,30 @@
  
 package net.nczonline.web.combiner;
 
+import com.atlassian.dag.DAG;
+import com.atlassian.dag.CycleDetectedException;
+import com.atlassian.dag.TopologicalSorter;
+
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.Reader;
 import java.io.Writer;
-import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.*;
 
 public class FileCombiner {
 
-    private HashMap sourceFiles = null;
-    private ArrayList todo = null;
+    private LinkedHashMap<String, SourceFile> sourceFiles = null;
+    private LinkedList todo = null;
     
     /**
      *  Creates a new FileCombiner object.
      */
     public FileCombiner(){
-        this.sourceFiles = new HashMap();
-        this.todo = new ArrayList();
+        this.sourceFiles = new LinkedHashMap();
+        this.todo = new LinkedList();
     }
     
     /**
@@ -55,21 +59,21 @@ public class FileCombiner {
      */
     public void combine(Writer out, File[] files, String charset, boolean verbose, boolean separator, boolean eliminateUnused){
         processSourceFiles(files, charset, verbose);
-        SourceFile[] finalFiles = constructFileList(verbose, eliminateUnused);
+        Collection<SourceFile> finalFiles = constructFileList(verbose, eliminateUnused);
         writeToOutput(out, finalFiles, verbose, separator);
     }
     
     /**
      * Combines a list of files and outputs the result onto the given writer.
      * @param out Where to place the output.
-     * @param files The filenames of the files to combine.
+     * @param filenames The filenames of the files to combine.
      * @param charset The character set to use.
      * @param verbose Indicates if warnings and additional information should be output.
      * @param separator Indicates if a separator should be output between files in the final output.
      * @param eliminateUnused Indicates if unused files (those with no dependencies and upon which nothing depends) should be eliminated.
      */    
     public void combine(Writer out, String[] filenames, String charset, boolean verbose, boolean separator, boolean eliminateUnused){
-        ArrayList files = new ArrayList();
+        List files = new LinkedList();
         
         for (int i=0; i < filenames.length; i++){
             File file = new File(filenames[i]);
@@ -123,7 +127,7 @@ public class FileCombiner {
     
     private void processSourceFile(File file, String charset, boolean verbose) {
         SourceFile sourceFile = getSourceFile(file);
-        
+
         //if it already has dependencies, then it's already been processed (prevents infinite loop if a circular dependency is detected)
         if (sourceFile.hasDependencies()){
             return;
@@ -215,52 +219,55 @@ public class FileCombiner {
         }      
     }
     
-    private SourceFile[] constructFileList(boolean verbose, boolean eliminateUnused){
-        ArrayList finalFiles = new ArrayList();
+    private Collection<SourceFile> constructFileList(boolean verbose, boolean eliminateUnused)
+    {
         SourceFile[] files = new SourceFile[sourceFiles.size()];
         sourceFiles.values().toArray(files);
-        
-        //check for circular references
-        for (int i=0; i < files.length; i++){
-            
-            if (verbose){
-                System.err.println("[INFO] Verifying dependencies of '" + files[i].getName() + "'");
-            }
-            
-            for (int j=i+1; j < files.length; j++){
-                
-                boolean dependsOn = files[i].hasDependency(files[j]);
-                boolean isDependencyOf = files[j].hasDependency(files[i]);
 
-                if (dependsOn && isDependencyOf){
-                    System.err.println("[ERROR] Circular dependencies: '" + files[i].getName() + "' and '" + files[j].getName() + "'");    
-                    System.exit(1);
-                } else if (!eliminateUnused || (dependsOn || isDependencyOf)) {
-                    if (!finalFiles.contains(files[i])){
-                        finalFiles.add(files[i]);
-                    }
-                    if (!finalFiles.contains(files[j])){
-                        finalFiles.add(files[j]);
-                    }                        
-                }            
+        DAG dag = new DAG();
+
+        for (Map.Entry<String, SourceFile> entry : sourceFiles.entrySet())
+        {
+            for (SourceFile sourceFile : entry.getValue().getDependencies())
+            {
+                try
+                {
+                    dag.addEdge(entry.getKey(), sourceFile.getName());
+                }
+                catch (CycleDetectedException e)
+                {
+                    System.err.println(e.getMessage());
+                    System.exit(-1);
+                }
             }
         }
-        SourceFile[] finalSourceFiles = new SourceFile[finalFiles.size()];
-        finalFiles.toArray(finalSourceFiles);
-        java.util.Arrays.sort(finalSourceFiles, new SourceFileComparator());        
+
+        List<String> finalFiles = TopologicalSorter.sort(dag);
+
+        Collection<SourceFile> finalSourceFiles = new LinkedList<SourceFile>();
+
+        for (String name : finalFiles)
+        {
+            SourceFile sourceFile = sourceFiles.get(name);
+            if (sourceFile != null) finalSourceFiles.add(sourceFile);
+        }
+        
         return finalSourceFiles;                
     }
     
-    private void writeToOutput(Writer out, SourceFile[] finalFiles, boolean verbose, boolean separator){
-        try {
-            for (int i=0; i < finalFiles.length; i++){
+    private void writeToOutput(Writer out, Collection<SourceFile> finalFiles, boolean verbose, boolean separator){
+        try
+        {
+            for (SourceFile sourceFile : finalFiles)
+            {
+                final String name = sourceFile.getName();
                 if (verbose){
-                    System.err.println("[INFO] Adding '" + finalFiles[i].getName() + "' to output.");
+                    System.err.println("[INFO] Adding '" + name + "' to output.");
                 }
                 if (separator){
-                    out.write("\n/*------" + finalFiles[i].getName() + "------*/\n");
+                    out.write("\n/*------" + name + "------*/\n");
                 }
-                out.write(finalFiles[i].getContents());
+                out.write(sourceFile.getContents());
             }
         } catch (IOException ex) {
             System.err.println(ex.getMessage());

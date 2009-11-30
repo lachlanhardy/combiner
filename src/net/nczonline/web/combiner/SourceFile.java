@@ -24,12 +24,12 @@ package net.nczonline.web.combiner;
 
 
 import java.io.*;
-import java.util.ArrayList;
+import java.util.LinkedList;
 
 public class SourceFile {
 
     private File file = null;
-    private ArrayList dependencies = null;
+    private LinkedList dependencies = null;
     private String contents = null;
     
     /**
@@ -38,7 +38,7 @@ public class SourceFile {
      */
     public SourceFile(File file){
         this.file = file;
-        dependencies = new ArrayList();
+        dependencies = new LinkedList();
     }
 
     public File getFile() {
@@ -71,28 +71,28 @@ public class SourceFile {
         dependencies.toArray(deps);
         return deps;
     }
-    
+
     public int getDependencyCount(){
         return dependencies.size();
     }
-    
+
     public boolean hasDependencies(){
-        return !dependencies.isEmpty();                
+        return !dependencies.isEmpty();
     }
-    
+
     public boolean hasDependency(String filename){
         boolean found = false;
         for (int i=0; i < dependencies.size() && !found; i++){
             SourceFile temp = (SourceFile) dependencies.get(i);
             found = temp.getName().equals(filename);
         }
-        return found;        
+        return found;
     }
-    
+
     public boolean hasDependency(File file){
         return hasDependency(file.getAbsolutePath());       
     }
-    
+
     public boolean hasDependency(SourceFile file){
         return hasDependency(file.getName());
     }

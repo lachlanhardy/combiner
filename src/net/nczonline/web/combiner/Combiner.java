@@ -25,12 +25,21 @@ import jargs.gnu.CmdLineParser;
 import java.io.*;
 import java.nio.charset.Charset;
 
+import org.apache.tools.ant.types.FileSet;
+import org.apache.tools.ant.types.PatternSet;
+import org.apache.tools.ant.types.selectors.FilenameSelector;
+import org.apache.tools.ant.DirectoryScanner;
+import org.apache.tools.ant.Project;
+
 /*
  * This file heavily inspired and based on YUI Compressor.
  * http://github.com/yui/yuicompressor
  */
 
 public class Combiner {
+
+    private static final String DEFAULT_CHARSET = "UTF-8";
+
 
     /**
      * @param args the command line arguments
@@ -43,7 +52,6 @@ public class Combiner {
         boolean eliminateUnused = false;
         
         //boolean keepAll = true;
-        String charset = null;
         String outputFilename = null;
         Writer out = null;
         
@@ -72,18 +80,6 @@ public class Combiner {
             verbose = parser.getOptionValue(verboseOpt) != null;
             separator = parser.getOptionValue(separatorOpt) != null;
             eliminateUnused = parser.getOptionValue(eliminateOpt) != null;
-            
-            //check for charset
-            charset = (String) parser.getOptionValue(charsetOpt);
-            if (charset == null || !Charset.isSupported(charset)) {
-                charset = System.getProperty("file.encoding");
-                if (charset == null) {
-                    charset = "UTF-8";
-                }
-                if (verbose) {
-                    System.err.println("[INFO] Using charset " + charset);
-                }
-            }
 
             //get the file arguments
             String[] fileArgs = parser.getRemainingArgs();
@@ -98,16 +94,16 @@ public class Combiner {
             outputFilename = (String) parser.getOptionValue(outputFilenameOpt);
             
             if (outputFilename == null) {
-                out = new OutputStreamWriter(System.out, charset);
+                out = new OutputStreamWriter(System.out, DEFAULT_CHARSET);
             } else {
                 if (verbose){
                     System.err.println("[INFO] Output file is '" + (new File(outputFilename)).getAbsolutePath() + "'");
                 }
-                out = new OutputStreamWriter(new FileOutputStream(outputFilename), charset);
-            }            
+                out = new OutputStreamWriter(new FileOutputStream(outputFilename), DEFAULT_CHARSET);
+            }
 
             FileCombiner combiner = new FileCombiner();
-            combiner.combine(out, fileArgs, charset, verbose, separator, eliminateUnused);
+            combiner.combine(out, getAllFilenames(fileArgs), DEFAULT_CHARSET, verbose, separator, eliminateUnused);
 
     
         } catch (CmdLineParser.OptionException e) {
@@ -126,6 +122,28 @@ public class Combiner {
             }            
         }
         
+    }
+
+    /**
+     * Collects all files that match the arguments passed in. this includes glob patterns eg **\/* or /foo/bar/baz\/*
+     * @param fileArgs
+     * @return files
+     */
+    private static String[] getAllFilenames(String[] fileArgs) {
+        FileSet fileSet = new FileSet();
+
+        for (String f : fileArgs)
+        {
+            PatternSet.NameEntry entry = fileSet.createInclude();
+            entry.setName(f);
+        }
+
+        fileSet.setDir(new File("."));
+
+        DirectoryScanner scanner = fileSet.getDirectoryScanner(new Project());
+        scanner.scan();
+
+        return scanner.getIncludedFiles();
     }
 
     /**
